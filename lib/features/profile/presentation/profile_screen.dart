@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:mobile/core/providers.dart';
 import 'package:mobile/core/session/auth_session.dart';
 import 'package:mobile/core/theme/tenant_theme.dart';
+import 'package:mobile/features/customers/data/customers_providers.dart';
 import 'package:mobile/features/tenants/presentation/add_bank_sheet.dart';
 import 'package:mobile/shared/constants/app_colors.dart';
 import 'package:mobile/shared/widgets/app_scaffold.dart';
@@ -161,9 +162,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _logout() async {
+    await ref.read(sessionControllerProvider.notifier).clearActiveBank();
     await ref.read(masterSessionControllerProvider.notifier).logout();
     if (!mounted) return;
-    context.go('/login');
+    context.go('/portal');
   }
 
   void _showAddBankSheet() {
@@ -180,13 +182,32 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final masterSession = ref.watch(masterSessionControllerProvider).value;
     final activeBankSession = ref.watch(sessionControllerProvider).value;
     final linkedBanks = ref.watch(linkedBanksProvider);
+    final customersAsync = ref.watch(customersProvider);
+    final customer = customersAsync.value?.items.firstOrNull;
 
-    final userName = masterSession?.user.fullName ??
-        activeBankSession?.user.fullName ??
+    final userName = activeBankSession?.user.fullName ??
+        masterSession?.user.fullName ??
         'Usuario';
-    final userEmail = masterSession?.user.email ??
-        activeBankSession?.user.email ??
+    final userEmail = activeBankSession?.user.email ??
+        masterSession?.user.email ??
         '';
+    final userRole = activeBankSession?.user.role ?? '';
+    final roleDisplay = userRole == 'TENANT_ADMIN'
+        ? 'Administrador'
+        : userRole == 'OPERATOR'
+            ? 'Operador'
+            : userRole == 'AUDITOR'
+                ? 'Auditor'
+                : 'Cliente';
+
+    final documentDisplay = customer != null
+        ? '${customer.documentType}: ${customer.documentNumber}'
+        : 'Doc: C.C. 1020304050';
+
+    final activeBank = activeBankSession?.tenant;
+    final activeBankColor = activeBank != null
+        ? (TenantTheme.parseHex(activeBank.primaryColor) ?? AppColors.primary)
+        : AppColors.primary;
 
     return AppScaffold(
       title: 'Perfil',
@@ -195,7 +216,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Tarjeta de identidad maestra
+          // Tarjeta de identidad del Cliente y Entidad Bancaria
           Card(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(18),
@@ -207,18 +228,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 children: [
                   CircleAvatar(
                     radius: 36,
-                    backgroundColor: const Color(0xFF0070BA).withOpacity(0.12),
-                    child: const Icon(
-                      Icons.person,
-                      size: 38,
-                      color: Color(0xFF0070BA),
+                    backgroundColor: activeBankColor.withOpacity(0.12),
+                    child: Text(
+                      userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: activeBankColor,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
                   Text(
                     userName,
                     style: const TextStyle(
-                      fontSize: 18,
+                      fontSize: 19,
                       fontWeight: FontWeight.bold,
                       color: AppColors.textPrimary,
                     ),
@@ -226,25 +250,136 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   const SizedBox(height: 4),
                   Text(
                     userEmail,
-                    style: const TextStyle(color: AppColors.textSecondary),
+                    style: const TextStyle(
+                        color: AppColors.textSecondary, fontSize: 13),
                   ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0070BA).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      activeBankSession != null
-                          ? 'Operando en: ${activeBankSession.tenant.name}'
-                          : 'Sesión Central BankOS',
-                      style: const TextStyle(
-                        color: Color(0xFF0070BA),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
+                  const SizedBox(height: 12),
+
+                  // Fila de Rol y Documento del Cliente
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.badge_outlined,
+                                size: 14,
+                                color: Theme.of(context).colorScheme.primary),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Rol: $roleDisplay',
+                              style: TextStyle(
+                                color:
+                                    Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceMuted,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.fingerprint,
+                                size: 14, color: AppColors.textSecondary),
+                            const SizedBox(width: 4),
+                            Text(
+                              documentDisplay,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 14),
+                  const Divider(height: 1),
+                  const SizedBox(height: 14),
+
+                  // Banco Actual con Botón directo para Cambiar de Banco
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: activeBankColor.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border:
+                          Border.all(color: activeBankColor.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: activeBankColor,
+                          child: const Icon(Icons.account_balance,
+                              color: Colors.white, size: 18),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                activeBank?.name ?? 'Sesión Central BankOS',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              Text(
+                                activeBank != null
+                                    ? 'Código: ${activeBank.code}'
+                                    : 'Plataforma BankOS',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => context.go('/portal'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: activeBankColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            textStyle: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.bold),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: const Text('Cambiar'),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -535,11 +670,38 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
 
           const SizedBox(height: 24),
-          PrimaryButton(
-            label: 'Cerrar sesión en BankOS',
-            icon: Icons.logout,
-            outlined: true,
-            onPressed: _logout,
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.account_balance, size: 18),
+                  label: const Text('Cambiar Banco'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () => context.go('/portal'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.logout, size: 18),
+                  label: const Text('Cerrar Sesión'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.error,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: _logout,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
         ],

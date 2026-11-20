@@ -78,7 +78,9 @@ class AuthInterceptor extends Interceptor {
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
-    if (options.path == ApiEndpoints.authLogin) {
+    if (options.path == ApiEndpoints.authLogin ||
+        options.path == ApiEndpoints.authRegister ||
+        options.path == ApiEndpoints.tenantsPublic) {
       handler.next(options);
       return;
     }
@@ -127,9 +129,12 @@ class ErrorInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
     final statusCode = err.response?.statusCode;
-    final isLogin = err.requestOptions.path == ApiEndpoints.authLogin;
+    final path = err.requestOptions.path;
+    final isPublicAuth = path == ApiEndpoints.authLogin ||
+        path == ApiEndpoints.authRegister ||
+        path == ApiEndpoints.tenantsPublic;
 
-    if (statusCode == 401 && !isLogin) {
+    if (statusCode == 401 && !isPublicAuth) {
       _onUnauthorized?.call();
     }
 

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile/core/providers.dart';
 import 'package:mobile/features/accounts/data/accounts_providers.dart';
+import 'package:mobile/features/cards/data/cards_providers.dart';
+import 'package:mobile/features/cards/presentation/card_visual_widget.dart';
 import 'package:mobile/features/transactions/data/transactions_providers.dart';
 import 'package:mobile/shared/constants/app_colors.dart';
 import 'package:mobile/shared/utils/money_formatter.dart';
@@ -21,8 +23,11 @@ class DashboardScreen extends ConsumerWidget {
     final session = ref.watch(sessionControllerProvider).value;
     final accountsAsync = ref.watch(accountsProvider);
     final transactionsAsync = ref.watch(transactionsProvider);
+    final cardsAsync = ref.watch(cardsProvider);
+
     final accounts = accountsAsync.value ?? const [];
     final transactions = transactionsAsync.value?.items ?? const [];
+    final cards = cardsAsync.value ?? const [];
 
     final currencies = accounts.map((account) => account.currency).toSet().toList()
       ..sort();
@@ -31,205 +36,332 @@ class DashboardScreen extends ConsumerWidget {
       title: 'Inicio',
       showBottomNav: true,
       currentIndex: 0,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.account_balance,
-                  size: 20,
-                  color: Theme.of(context).colorScheme.primary,
+      child: RefreshIndicator(
+        onRefresh: () async {
+          ref.read(dataVersionProvider.notifier).state++;
+          await Future.wait([
+            ref.refresh(accountsProvider.future),
+            ref.refresh(transactionsProvider.future),
+            ref.refresh(cardsProvider.future),
+          ]);
+        },
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // Banner de la entidad bancaria activa con botón para cambiar
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Entidad activa: ${session?.tenant.name ?? 'Banco'}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: Theme.of(context).colorScheme.primary,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.account_balance,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Entidad activa: ${session?.tenant.name ?? 'Banco'}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                   ),
-                ),
-                TextButton(
-                  onPressed: () => BankSwitcherBottomSheet.show(context),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  TextButton(
+                    onPressed: () => BankSwitcherBottomSheet.show(context),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text(
+                      'Cambiar',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
                   ),
-                  child: const Text('Cambiar',
-                      style:
-                          TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+
+            // Saludo personalizado
+            Text(
+              'Hola, ${session?.user.fullName ?? 'usuario'}',
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              session?.tenant.name ?? '',
+              style: const TextStyle(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+
+            // Sección de Saldos Consolidados ("Montos que tiene")
+            if (accountsAsync.isLoading)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (accountsAsync.hasError)
+              _ErrorBox(
+                  message: 'No se pudieron cargar las cuentas: ${accountsAsync.error}')
+            else if (accounts.isEmpty)
+              const _EmptyBox(message: 'Todavía no hay cuentas registradas en este banco')
+            else
+              ...currencies.map((currency) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: BalanceCard(
+                      title: 'Saldo disponible en $currency',
+                      amount: MoneyFormatter.format(
+                        MoneyFormatter.sum(
+                          accounts
+                              .where((account) => account.currency == currency)
+                              .map((account) => account.balance),
+                        ),
+                        currency: currency,
+                      ),
+                      subtitle: '${accounts.where((a) => a.currency == currency).length} '
+                          'cuenta(s) activa(s)',
+                    ),
+                  )),
+
+            const SizedBox(height: 10),
+
+            // Sección de Accesos Rápidos (4 Operaciones Esenciales)
+            const Text(
+              'Accesos rápidos',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _QuickAction(
+                    icon: Icons.south_west,
+                    label: 'Depositar',
+                    onTap: () => context.go('/transactions/deposit'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _QuickAction(
+                    icon: Icons.north_east,
+                    label: 'Retirar',
+                    onTap: () => context.go('/transactions/withdrawal'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _QuickAction(
+                    icon: Icons.credit_card,
+                    label: 'Mi Tarjeta',
+                    onTap: () => context.go('/cards'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _QuickAction(
+                    icon: Icons.swap_horiz,
+                    label: 'Transferir',
+                    onTap: () => context.go('/transactions/transfer'),
+                  ),
                 ),
               ],
             ),
-          ),
-          Text(
-            'Hola, ${session?.user.fullName ?? 'usuario'}',
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
+
+            const SizedBox(height: 20),
+
+            // Vista Previa de "Tu Tarjeta Débito Digital"
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Tu Tarjeta Débito Digital',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => context.go('/cards'),
+                  child: const Text('Ver detalles'),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            session?.tenant.name ?? '',
-            style: const TextStyle(color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 16),
-          if (accountsAsync.isLoading)
-            const Padding(
-              padding: EdgeInsets.all(24),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (accountsAsync.hasError)
-            _ErrorBox(message: 'No se pudieron cargar las cuentas: ${accountsAsync.error}')
-          else
-            ...currencies.map((currency) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: BalanceCard(
-                    title: 'Saldo disponible en $currency',
-                    amount: MoneyFormatter.format(
-                      MoneyFormatter.sum(
-                        accounts
-                            .where((account) => account.currency == currency)
-                            .map((account) => account.balance),
+            const SizedBox(height: 4),
+            if (cardsAsync.isLoading)
+              const SizedBox(
+                height: 140,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (cards.isNotEmpty)
+              CardVisualWidget(
+                card: cards.first,
+                isCompact: true,
+                onTap: () => context.go('/cards'),
+              )
+            else
+              InkWell(
+                onTap: () => context.go('/cards'),
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.credit_card,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
                       ),
-                      currency: currency,
-                    ),
-                    subtitle: '${accounts.where((a) => a.currency == currency).length} '
-                        'cuenta(s) activa(s)',
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            Text(
+                              'Solicita tu Tarjeta Débito Digital',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              '100% digital, compras en línea y retiros seguros',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.chevron_right,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ],
                   ),
-                )),
-          const SizedBox(height: 10),
-          const Text(
-            'Accesos rápidos',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
+                ),
+              ),
+
+            const SizedBox(height: 20),
+
+            // Mis Cuentas Activas
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Mis cuentas',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => context.go('/accounts'),
+                  child: const Text('Ver todas'),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _QuickAction(
-                  icon: Icons.south_west,
-                  label: 'Depositar',
-                  onTap: () => context.go('/transactions/deposit'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _QuickAction(
-                  icon: Icons.north_east,
-                  label: 'Retirar',
-                  onTap: () => context.go('/transactions/withdrawal'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _QuickAction(
-                  icon: Icons.swap_horiz,
-                  label: 'Transferir',
-                  onTap: () => context.go('/transactions/transfer'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 22),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Mis cuentas',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              TextButton(
-                onPressed: () => context.go('/accounts'),
-                child: const Text('Ver todas'),
-              ),
-            ],
-          ),
-          if (accounts.isEmpty)
-            const _EmptyBox(message: 'Todavía no hay cuentas en este banco')
-          else
-            ...accounts.take(2).map(
-                  (account) => AccountCard(
-                    name: account.displayName,
-                    number: account.maskedNumber,
-                    balance: MoneyFormatter.format(account.balance,
-                        currency: account.currency),
-                    currency: account.currency,
-                    status: account.isActive ? 'Activa' : account.status,
-                    onTap: () => context.go('/accounts/${account.id}'),
-                  ),
-                ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Últimos movimientos',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              TextButton(
-                onPressed: () => context.go('/transactions'),
-                child: const Text('Ver historial'),
-              ),
-            ],
-          ),
-          if (transactionsAsync.isLoading)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (transactions.isEmpty)
-            const _EmptyBox(message: 'Aún no hay movimientos')
-          else
-            ...transactions.take(3).map(
-                  (transaction) => TransactionTile(
-                    title: transaction.displayTitle,
-                    subtitle: transaction.displaySubtitle,
-                    amount: MoneyFormatter.format(
-                      transaction.amount,
-                      currency: transaction.currency,
-                      signed: transaction.type.toUpperCase() == 'DEPOSIT',
+            if (accounts.isEmpty)
+              const _EmptyBox(message: 'Todavía no hay cuentas en este banco')
+            else
+              ...accounts.take(2).map(
+                    (account) => AccountCard(
+                      name: account.displayName,
+                      number: account.maskedNumber,
+                      balance: MoneyFormatter.format(account.balance,
+                          currency: account.currency),
+                      currency: account.currency,
+                      status: account.isActive ? 'Activa' : account.status,
+                      onTap: () => context.go('/accounts/${account.id}'),
                     ),
-                    isIncoming: transaction.isIncomingFor(null),
-                    onTap: () => context.go('/transactions/${transaction.id}'),
+                  ),
+
+            const SizedBox(height: 12),
+
+            // Últimos Movimientos
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Últimos movimientos',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
                   ),
                 ),
-          const SizedBox(height: 8),
-          PrimaryButton(
-            label: 'Ir a movimientos',
-            outlined: true,
-            icon: Icons.receipt_long,
-            onPressed: () => context.go('/transactions'),
-          ),
-        ],
+                TextButton(
+                  onPressed: () => context.go('/transactions'),
+                  child: const Text('Ver historial'),
+                ),
+              ],
+            ),
+            if (transactionsAsync.isLoading)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (transactions.isEmpty)
+              const _EmptyBox(message: 'Aún no hay movimientos registrados')
+            else
+              ...transactions.take(3).map(
+                    (transaction) => TransactionTile(
+                      title: transaction.displayTitle,
+                      subtitle: transaction.displaySubtitle,
+                      amount: MoneyFormatter.format(
+                        transaction.amount,
+                        currency: transaction.currency,
+                        signed: transaction.type.toUpperCase() == 'DEPOSIT',
+                      ),
+                      isIncoming: transaction.isIncomingFor(null),
+                      onTap: () => context.go('/transactions/${transaction.id}'),
+                    ),
+                  ),
+
+            const SizedBox(height: 12),
+            PrimaryButton(
+              label: 'Ver todos los movimientos',
+              outlined: true,
+              icon: Icons.receipt_long,
+              onPressed: () => context.go('/transactions'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
@@ -252,7 +384,7 @@ class _QuickAction extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(14),
@@ -260,15 +392,22 @@ class _QuickAction extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Icon(icon, color: Theme.of(context).colorScheme.primary),
+            Icon(
+              icon,
+              color: Theme.of(context).colorScheme.primary,
+              size: 22,
+            ),
             const SizedBox(height: 6),
             Text(
               label,
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary,
-                fontSize: 13,
+                fontSize: 11.5,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
             ),
           ],
         ),

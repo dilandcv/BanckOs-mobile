@@ -1,8 +1,10 @@
+import 'package:dio/dio.dart';
 import 'package:mobile/core/network/api_client.dart';
 import 'package:mobile/core/network/api_endpoints.dart';
 import 'package:mobile/core/network/api_exception.dart';
 import 'package:mobile/core/session/auth_session.dart';
 import 'package:mobile/core/storage/secure_session_store.dart';
+import 'package:mobile/features/tenants/data/tenant.dart';
 
 /// Identidad vigente según `/auth/me`.
 class CurrentIdentity {
@@ -198,6 +200,104 @@ class AuthRepository {
     await _store.saveSession(session);
     await _store.setActiveTenant(session.tenant.code);
     return session;
+  }
+
+  /// Registro público contextual de cliente por banco.
+  ///
+  /// Crea el usuario en el banco, el cliente asociado, su cuenta de ahorros inicial
+  /// y emite su primera tarjeta digital activa.
+  Future<AuthSession> registerCustomer({
+    required String tenantCode,
+    required String email,
+    required String password,
+    required String fullName,
+    required String documentType,
+    required String documentNumber,
+  }) async {
+    final envelope = await _api.post<Map<String, dynamic>>(
+      ApiEndpoints.authRegister,
+      data: <String, dynamic>{
+        'tenant_code': tenantCode.trim().toUpperCase(),
+        'email': email.trim().toLowerCase(),
+        'password': password,
+        'full_name': fullName.trim(),
+        'document_type': documentType.trim().toUpperCase(),
+        'document_number': documentNumber.trim(),
+      },
+      parse: (raw) => (raw as Map).cast<String, dynamic>(),
+    );
+
+    final data = envelope.data;
+    if (data == null) {
+      throw ApiException.network('El servidor no devolvió datos de sesión tras el registro');
+    }
+
+    final session = AuthSession.fromLogin(data);
+    await _store.saveSession(session);
+    await _store.setActiveTenant(session.tenant.code);
+    return session;
+  }
+
+  /// Lista pública de instituciones financieras activas (accesible sin token previo).
+  Future<List<TenantModel>> getPublicTenants() async {
+    final envelope = await _api.get<List<dynamic>>(
+      ApiEndpoints.tenantsPublic,
+      parse: (raw) => raw as List<dynamic>,
+    );
+
+    final data = envelope.data ?? const [];
+    return data
+        .map((item) => TenantModel.fromJson((item as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Actualización de colores o URL de logo de una entidad bancaria.
+  Future<TenantModel> updateTenantBranding({
+    required String tenantId,
+    String? primaryColor,
+    String? secondaryColor,
+    String? logoUrl,
+  }) async {
+    final envelope = await _api.patch<Map<String, dynamic>>(
+      ApiEndpoints.tenantBranding(tenantId),
+      data: <String, dynamic>{
+        if (primaryColor != null) 'primary_color': primaryColor,
+        if (secondaryColor != null) 'secondary_color': secondaryColor,
+        if (logoUrl != null) 'logo_url': logoUrl,
+      },
+      parse: (raw) => (raw as Map).cast<String, dynamic>(),
+    );
+
+    final data = envelope.data;
+    if (data == null) {
+      throw ApiException.network('El servidor no devolvió datos actualizados de la institución');
+    }
+
+    return TenantModel.fromJson(data);
+  }
+
+  /// Subida de logotipo en formato imagen/foto mediante multipart form data.
+  Future<TenantModel> uploadTenantLogo({
+    required String tenantId,
+    required List<int> fileBytes,
+    required String filename,
+  }) async {
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromBytes(fileBytes, filename: filename),
+    });
+
+    final envelope = await _api.post<Map<String, dynamic>>(
+      ApiEndpoints.tenantLogo(tenantId),
+      data: formData,
+      parse: (raw) => (raw as Map).cast<String, dynamic>(),
+    );
+
+    final data = envelope.data;
+    if (data == null) {
+      throw ApiException.network('El servidor no devolvió respuesta al subir el logo');
+    }
+
+    return TenantModel.fromJson(data);
   }
 
   /// Valida el token activo contra el backend y devuelve la identidad real.
