@@ -19,3 +19,9 @@ final tenantsProvider = FutureProvider<List<TenantModel>>((ref) async {
     rethrow;
   }
 });
+
+/// Lista pública de instituciones activas en la plataforma BankOS (sin requerir sesión previa).
+final publicTenantsProvider = FutureProvider<List<TenantModel>>((ref) async {
+  ref.watch(dataVersionProvider);
+  return ref.read(authRepositoryProvider).getPublicTenants();
+});

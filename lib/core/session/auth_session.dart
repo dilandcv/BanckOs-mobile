@@ -196,6 +196,24 @@ class TenantSummary {
         'logo_url': logoUrl,
       };
 
+  TenantSummary copyWith({
+    String? id,
+    String? code,
+    String? name,
+    String? primaryColor,
+    String? secondaryColor,
+    String? logoUrl,
+  }) {
+    return TenantSummary(
+      id: id ?? this.id,
+      code: code ?? this.code,
+      name: name ?? this.name,
+      primaryColor: primaryColor ?? this.primaryColor,
+      secondaryColor: secondaryColor ?? this.secondaryColor,
+      logoUrl: logoUrl ?? this.logoUrl,
+    );
+  }
+
   @override
   String toString() => 'TenantSummary($code)';
 }

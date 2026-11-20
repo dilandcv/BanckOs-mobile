@@ -8,12 +8,16 @@ import 'package:mobile/features/accounts/presentation/accounts_screen.dart';
 import 'package:mobile/features/admin/presentation/access_denied_screen.dart';
 import 'package:mobile/features/admin/presentation/admin_hub_screen.dart';
 import 'package:mobile/features/audit/presentation/audit_screen.dart';
+import 'package:mobile/features/authentication/presentation/bank_auth_screen.dart';
 import 'package:mobile/features/authentication/presentation/login_screen.dart';
+import 'package:mobile/features/cards/presentation/cards_screen.dart';
 import 'package:mobile/features/customers/presentation/customers_screen.dart';
 import 'package:mobile/features/dashboard/presentation/dashboard_screen.dart';
 import 'package:mobile/features/dashboard/presentation/master_dashboard_screen.dart';
+import 'package:mobile/features/portal/presentation/bank_portal_screen.dart';
 import 'package:mobile/features/profile/presentation/profile_screen.dart';
 import 'package:mobile/features/settings/presentation/settings_screen.dart';
+import 'package:mobile/features/tenants/data/tenant.dart';
 import 'package:mobile/features/tenants/presentation/tenants_admin_screen.dart';
 import 'package:mobile/features/transactions/presentation/deposit_screen.dart';
 import 'package:mobile/features/transactions/presentation/transaction_detail_screen.dart';
@@ -52,25 +56,34 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   final refreshNotifier = ref.watch(routerRefreshNotifierProvider);
 
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: '/portal',
     refreshListenable: refreshNotifier,
     redirect: (context, state) {
       final isMasterLoggedIn = ref.read(isMasterAuthenticatedProvider);
       final activeBankSession = ref.read(sessionControllerProvider).value;
 
       final location = state.matchedLocation;
-      final goingToLogin = location == '/login';
+      if (location == '/') return '/portal';
 
-      if (!isMasterLoggedIn && !goingToLogin) return '/login';
-      if (isMasterLoggedIn && goingToLogin) return '/hub';
+      final isPublic = location == '/portal' ||
+          location.startsWith('/bank') ||
+          location == '/login';
+
+      if (!isMasterLoggedIn && activeBankSession == null && !isPublic) {
+        return '/portal';
+      }
+
+      if (isMasterLoggedIn && location == '/login') {
+        return '/hub';
+      }
 
       // Si intenta ingresar a un módulo bancario sin haber elegido un banco activo
-      if (isMasterLoggedIn &&
+      if (activeBankSession == null &&
           (location == '/dashboard' ||
               location == '/accounts' ||
-              location == '/transactions') &&
-          activeBankSession == null) {
-        return '/hub';
+              location == '/transactions' ||
+              location == '/cards')) {
+        return isMasterLoggedIn ? '/hub' : '/portal';
       }
 
       final user = activeBankSession?.user;
@@ -80,6 +93,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      GoRoute(
+        path: '/',
+        redirect: (_, __) => '/portal',
+      ),
+      GoRoute(
+        path: '/portal',
+        builder: (context, state) => const BankPortalScreen(),
+      ),
+      GoRoute(
+        path: '/bank/:code',
+        builder: (context, state) => BankAuthScreen(
+          tenantCode: state.pathParameters['code'] ?? '',
+          initialTenant: state.extra as TenantModel?,
+        ),
+      ),
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
@@ -95,6 +123,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/dashboard',
         builder: (context, state) => const DashboardScreen(),
+      ),
+      GoRoute(
+        path: '/cards',
+        builder: (context, state) => const CardsScreen(),
+      ),
+      GoRoute(
+        path: '/cards',
+        builder: (context, state) => const CardsScreen(),
       ),
       GoRoute(
         path: '/accounts',

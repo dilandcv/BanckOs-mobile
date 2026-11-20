@@ -25,7 +25,7 @@ class AppScaffold extends ConsumerWidget {
         context.go('/dashboard');
         break;
       case 1:
-        context.go('/accounts');
+        context.go('/cards');
         break;
       case 2:
         context.go('/transactions');
@@ -93,19 +93,22 @@ class AppScaffold extends ConsumerWidget {
               items: const [
                 BottomNavigationBarItem(
                   icon: Icon(Icons.dashboard_outlined),
+                  activeIcon: Icon(Icons.dashboard),
                   label: 'Inicio',
                 ),
                 BottomNavigationBarItem(
-                  icon: Icon(Icons.account_balance_wallet_outlined),
-                  label: 'Cuentas',
+                  icon: Icon(Icons.credit_card_outlined),
+                  activeIcon: Icon(Icons.credit_card),
+                  label: 'Tarjetas',
                 ),
                 BottomNavigationBarItem(
                   icon: Icon(Icons.swap_horiz),
-                  label: 'Movimientos',
+                  label: 'Operaciones',
                 ),
                 BottomNavigationBarItem(
                   icon: Icon(Icons.person_outline),
-                  label: 'Perfil',
+                  activeIcon: Icon(Icons.person),
+                  label: 'Mi Perfil',
                 ),
               ],
             )

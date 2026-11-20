@@ -3,6 +3,7 @@ class ApiEndpoints {
   const ApiEndpoints._();
 
   static const String authLogin = '/auth/login';
+  static const String authRegister = '/auth/register';
   static const String authMe = '/auth/me';
   static const String authExchangeBankToken = '/auth/exchange-bank-token';
 
@@ -11,8 +12,10 @@ class ApiEndpoints {
   static const String userBanks = '/user/banks';
 
   static const String tenants = '/tenants';
+  static const String tenantsPublic = '/tenants/public';
   static const String users = '/users';
   static const String customers = '/customers';
+  static const String cards = '/cards';
 
   static const String accounts = '/accounts';
   static const String accountsAll = '/accounts/all';
@@ -30,6 +33,9 @@ class ApiEndpoints {
   static const String webhookEvents = '/webhooks/events';
 
   static String tenantById(String id) => '/tenants/$id';
+  static String tenantBranding(String id) => '/tenants/$id/branding';
+  static String tenantLogo(String id) => '/tenants/$id/logo';
+  static String cardStatus(String id) => '/cards/$id/status';
   static String userById(String id) => '/users/$id';
   static String customerById(String id) => '/customers/$id';
   static String accountById(String id) => '/accounts/$id';
